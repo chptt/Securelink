@@ -7,7 +7,7 @@ const SUPABASE_CONFIGURED = !!(process.env.SUPABASE_URL && process.env.SUPABASE_
 
 export async function GET(req: NextRequest, { params }: { params: { id: string } }) {
   try {
-    const { searchParams } = new URL(req.url);
+    const searchParams = req.nextUrl.searchParams;
     const address = searchParams.get("address");
     if (!address) return NextResponse.json({ purchase: null });
     const { id: videoId } = params;

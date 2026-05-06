@@ -11,6 +11,7 @@ export const metadata: Metadata = {
   description:
     "Buy and sell time-limited access to premium video content, secured by Sui blockchain and AES-256 encryption.",
   keywords: ["video marketplace", "Sui blockchain", "zkLogin", "encrypted content", "Web3"],
+  metadataBase: new URL("https://securelink-eta.vercel.app"),
   openGraph: {
     title: "CipherView",
     description: "Encrypted video access marketplace on Sui",
