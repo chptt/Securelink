@@ -52,6 +52,24 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Failed to fetch videos" }, { status: 500 });
     }
 
+    // If no videos in DB yet, return mock data so the explore page isn't empty
+    if (!data || data.length === 0) {
+      let mockVideos = [...MOCK_VIDEOS];
+      if (search) {
+        const q = search.toLowerCase();
+        mockVideos = mockVideos.filter(
+          (v) =>
+            v.title.toLowerCase().includes(q) ||
+            v.description.toLowerCase().includes(q)
+        );
+      }
+      return NextResponse.json({
+        videos: mockVideos.slice(offset, offset + limit),
+        total: mockVideos.length,
+        mock: true,
+      });
+    }
+
     return NextResponse.json({ videos: data || [], total: count || 0 });
   } catch (err) {
     console.error("[videos] Error:", err);
