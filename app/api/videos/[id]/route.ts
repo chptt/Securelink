@@ -12,6 +12,15 @@ export async function GET(
   try {
     const { id } = params;
 
+    // Always serve mock data for mock IDs regardless of Supabase config
+    if (id.startsWith("mock-")) {
+      const video = MOCK_VIDEOS.find((v) => v.id === id);
+      if (!video) {
+        return NextResponse.json({ error: "Video not found" }, { status: 404 });
+      }
+      return NextResponse.json({ video, mock: true });
+    }
+
     if (DEV_MODE && !SUPABASE_CONFIGURED) {
       const video = MOCK_VIDEOS.find((v) => v.id === id);
       if (!video) {

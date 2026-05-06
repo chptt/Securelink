@@ -11,11 +11,14 @@ export async function GET(req: NextRequest, { params }: { params: { id: string }
     const address = searchParams.get("address");
     if (!address) return NextResponse.json({ purchase: null });
     const { id: videoId } = params;
-    if (DEV_MODE && !SUPABASE_CONFIGURED) {
+
+    // Always use mock purchases for mock video IDs
+    if (videoId.startsWith("mock-") || DEV_MODE && !SUPABASE_CONFIGURED) {
       const key = `${address}:${videoId}`;
       const purchase = mockPurchases[key] || null;
       return NextResponse.json({ purchase });
     }
+
     const supabase = getSupabaseAdmin();
     const { data } = await supabase
       .from("purchases")

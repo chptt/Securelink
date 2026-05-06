@@ -34,32 +34,25 @@ export async function POST(
 
     const { id: videoId } = params;
 
-    if (DEV_MODE && !SUPABASE_CONFIGURED) {
-      // Mock mode
+    // Always use mock flow for mock video IDs (shown when DB is empty)
+    if (videoId.startsWith("mock-") || (DEV_MODE && !SUPABASE_CONFIGURED)) {
       const video = MOCK_VIDEOS.find((v) => v.id === videoId);
       if (!video) {
         return NextResponse.json({ error: "Video not found" }, { status: 404 });
       }
-
       const purchaseKey = `${user.address}:${videoId}`;
       const purchase = mockPurchases[purchaseKey];
-
       if (!purchase) {
         return NextResponse.json({ error: "No active purchase found" }, { status: 403 });
       }
-
       if (new Date(purchase.expires_at) < new Date()) {
         return NextResponse.json({ error: "Access has expired" }, { status: 403 });
       }
-
       const embedUrl = MOCK_EMBED_URLS[videoId];
       if (!embedUrl) {
         return NextResponse.json({ error: "Video not available" }, { status: 404 });
       }
-
       const remaining = secondsUntil(purchase.expires_at);
-
-      // Return embed URL — this is the ONLY place it's exposed
       return NextResponse.json({
         embedUrl,
         expiresAt: purchase.expires_at,

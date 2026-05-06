@@ -20,28 +20,18 @@ export async function POST(
     const body = await req.json();
     const { txDigest } = body;
 
-    if (DEV_MODE && !SUPABASE_CONFIGURED) {
-      // Mock mode
+    // Always use mock flow for mock video IDs (shown when DB is empty)
+    if (videoId.startsWith("mock-") || (DEV_MODE && !SUPABASE_CONFIGURED)) {
       const video = MOCK_VIDEOS.find((v) => v.id === videoId);
       if (!video) {
         return NextResponse.json({ error: "Video not found" }, { status: 404 });
       }
-
       const expiresAt = new Date(
         Date.now() + video.duration_hours * 60 * 60 * 1000
       ).toISOString();
-
       const purchaseKey = `${user.address}:${videoId}`;
-      mockPurchases[purchaseKey] = {
-        expires_at: expiresAt,
-        status: "active",
-      };
-
-      return NextResponse.json({
-        success: true,
-        expiresAt,
-        mock: true,
-      });
+      mockPurchases[purchaseKey] = { expires_at: expiresAt, status: "active" };
+      return NextResponse.json({ success: true, expiresAt, mock: true });
     }
 
     const supabase = getSupabaseAdmin();
