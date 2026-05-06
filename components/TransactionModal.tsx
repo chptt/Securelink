@@ -5,6 +5,7 @@ import { CheckCircle, Loader2, ExternalLink, Play } from "lucide-react";
 import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
@@ -38,6 +39,9 @@ export function TransactionModal({
           <DialogTitle className="gradient-text">
             {loading ? "Processing Transaction" : "Access Granted!"}
           </DialogTitle>
+          <DialogDescription>
+            {loading ? "Submitting your purchase to the Sui blockchain." : "Your video access has been confirmed on-chain."}
+          </DialogDescription>
         </DialogHeader>
 
         <div className="py-6 text-center space-y-6">

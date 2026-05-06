@@ -110,7 +110,7 @@ export function SecureVideoPlayer({ embedUrl, expiresAt, onExpire }: SecureVideo
           ref={iframeRef}
           src={secureUrl}
           className="absolute inset-0 w-full h-full"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen
           title="Secure Video Player"
           sandbox="allow-scripts allow-same-origin allow-presentation allow-popups"
