@@ -7,10 +7,10 @@ import { motion } from "framer-motion";
 import { Lock, Clock, Coins } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { formatSui, truncateAddress } from "@/lib/utils";
-import type { PublicVideo } from "@/lib/supabase";
+import type { PublicVideoMetadata } from "@/lib/pinata";
 
 interface VideoCardProps {
-  video: PublicVideo;
+  video: PublicVideoMetadata;
   hasPurchase?: boolean;
   isExpired?: boolean;
 }

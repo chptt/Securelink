@@ -44,7 +44,7 @@ export function Footer() {
               <li>zkLogin</li>
               <li>AES-256-GCM</li>
               <li>Next.js 14</li>
-              <li>Supabase</li>
+              <li>Pinata IPFS</li>
             </ul>
           </div>
         </div>

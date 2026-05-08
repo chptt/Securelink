@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { formatSui, formatDate, truncateAddress, isExpired, secondsUntil } from "@/lib/utils";
 import { getAddressExplorerUrl } from "@/lib/sui";
-import type { PublicVideo } from "@/lib/supabase";
+import type { PublicVideoMetadata } from "@/lib/pinata";
 
 interface PurchaseInfo {
   expires_at: string;
@@ -26,7 +26,7 @@ interface PurchaseInfo {
 export default function VideoDetailPage({ params }: { params: { id: string } }) {
   const { data: session } = useSession();
   const router = useRouter();
-  const [video, setVideo] = useState<PublicVideo | null>(null);
+  const [video, setVideo] = useState<PublicVideoMetadata | null>(null);
   const [purchase, setPurchase] = useState<PurchaseInfo | null>(null);
   const [loading, setLoading] = useState(true);
 

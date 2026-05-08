@@ -8,10 +8,10 @@ import { Footer } from "@/components/Footer";
 import { VideoCard, VideoCardSkeleton } from "@/components/VideoCard";
 import { EmptyState } from "@/components/EmptyState";
 import { Input } from "@/components/ui/input";
-import type { PublicVideo } from "@/lib/supabase";
+import type { PublicVideoMetadata } from "@/lib/pinata";
 
 export default function ExplorePage() {
-  const [videos, setVideos] = useState<PublicVideo[]>([]);
+  const [videos, setVideos] = useState<PublicVideoMetadata[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
