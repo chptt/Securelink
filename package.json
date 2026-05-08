@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@mysten/dapp-kit": "^0.14.36",
+    "@mysten/dapp-kit": "^0.20.0",
     "@mysten/sui": "^1.45.2",
     "@radix-ui/react-avatar": "^1.0.4",
     "@radix-ui/react-dialog": "^1.0.5",
