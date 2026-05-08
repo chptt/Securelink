@@ -13,12 +13,20 @@
 
 import { PinataSDK } from "pinata";
 
+// Public IPFS gateway fallback — used when dedicated gateway is not configured
+const PUBLIC_IPFS_GATEWAY = "ipfs.io";
+
 function getPinata() {
   const jwt = process.env.PINATA_JWT;
-  const gateway = process.env.NEXT_PUBLIC_PINATA_GATEWAY;
   if (!jwt) throw new Error("PINATA_JWT is not set");
-  if (!gateway) throw new Error("NEXT_PUBLIC_PINATA_GATEWAY is not set");
+
+  // Gateway is optional — fall back to public IPFS gateway
+  const gateway = process.env.NEXT_PUBLIC_PINATA_GATEWAY || PUBLIC_IPFS_GATEWAY;
   return new PinataSDK({ pinataJwt: jwt, pinataGateway: gateway });
+}
+
+function getGateway(): string {
+  return process.env.NEXT_PUBLIC_PINATA_GATEWAY || PUBLIC_IPFS_GATEWAY;
 }
 
 export interface VideoMetadata {
@@ -66,19 +74,35 @@ export async function uploadVideoMetadata(
 
 /**
  * Fetch video metadata JSON from IPFS by CID.
+ * Tries dedicated gateway first, falls back to public IPFS gateway.
  */
 export async function getVideoMetadata(cid: string): Promise<VideoMetadata> {
-  const gateway = process.env.NEXT_PUBLIC_PINATA_GATEWAY;
-  if (!gateway) throw new Error("NEXT_PUBLIC_PINATA_GATEWAY is not set");
+  const gateway = getGateway();
   const url = `https://${gateway}/ipfs/${cid}`;
-  const res = await fetch(url, { next: { revalidate: 3600 } });
-  if (!res.ok) throw new Error(`Failed to fetch metadata for CID: ${cid}`);
+
+  const res = await fetch(url, {
+    next: { revalidate: 3600 },
+    headers: { Accept: "application/json" },
+  });
+
+  if (!res.ok) {
+    // Try public gateway as fallback
+    const fallbackUrl = `https://${PUBLIC_IPFS_GATEWAY}/ipfs/${cid}`;
+    const fallback = await fetch(fallbackUrl, {
+      next: { revalidate: 3600 },
+      headers: { Accept: "application/json" },
+    });
+    if (!fallback.ok) throw new Error(`Failed to fetch metadata for CID: ${cid}`);
+    const data = await fallback.json();
+    return { ...data, id: cid };
+  }
+
   const data = await res.json();
   return { ...data, id: cid };
 }
 
 /**
- * List all CipherView videos from Pinata.
+ * List all SecureLink videos from Pinata.
  * Filtered by keyvalue type="cipherview_video".
  */
 export async function listVideos(opts?: {
@@ -86,14 +110,14 @@ export async function listVideos(opts?: {
 }): Promise<{ videos: PublicVideoMetadata[] }> {
   const pinata = getPinata();
 
-  const files = await pinata.files.public
+  const result = await pinata.files.public
     .list()
     .keyvalues({ type: "cipherview_video" })
     .limit(opts?.limit ?? 20)
     .order("DESC");
 
   const videos = await Promise.all(
-    files.files.map(async (file) => {
+    result.files.map(async (file) => {
       try {
         const meta = await getVideoMetadata(file.cid);
         const { encrypted_url, encryption_iv, encryption_auth_tag, ...pub } = meta;
@@ -115,14 +139,14 @@ export async function listVideosByCreator(
 ): Promise<PublicVideoMetadata[]> {
   const pinata = getPinata();
 
-  const files = await pinata.files.public
+  const result = await pinata.files.public
     .list()
     .keyvalues({ type: "cipherview_video", creator: creatorAddress })
     .limit(50)
     .order("DESC");
 
   const videos = await Promise.all(
-    files.files.map(async (file) => {
+    result.files.map(async (file) => {
       try {
         const meta = await getVideoMetadata(file.cid);
         const { encrypted_url, encryption_iv, encryption_auth_tag, ...pub } = meta;

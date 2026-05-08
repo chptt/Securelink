@@ -41,19 +41,27 @@ export async function POST(req: NextRequest) {
     const { encryptedUrl, iv, authTag } = encryptText(embedUrl);
 
     // Step 2: Upload encrypted metadata JSON to IPFS via Pinata
-    // The returned CID becomes the video ID
-    const cid = await uploadVideoMetadata({
-      title: title.trim(),
-      description: description?.trim() || "",
-      creator_address: user.address,
-      thumbnail_url: thumbnailUrl,
-      encrypted_url: encryptedUrl,
-      encryption_iv: iv,
-      encryption_auth_tag: authTag,
-      price_sui: parseFloat(priceSui),
-      duration_hours: parseInt(durationHours),
-      created_at: new Date().toISOString(),
-    });
+    let cid: string;
+    try {
+      cid = await uploadVideoMetadata({
+        title: title.trim(),
+        description: description?.trim() || "",
+        creator_address: user.address,
+        thumbnail_url: thumbnailUrl,
+        encrypted_url: encryptedUrl,
+        encryption_iv: iv,
+        encryption_auth_tag: authTag,
+        price_sui: parseFloat(priceSui),
+        duration_hours: parseInt(durationHours),
+        created_at: new Date().toISOString(),
+      });
+    } catch (pinataErr) {
+      console.error("[upload] Pinata upload failed:", pinataErr);
+      return NextResponse.json(
+        { error: `Failed to store video metadata: ${pinataErr instanceof Error ? pinataErr.message : "Unknown error"}` },
+        { status: 500 }
+      );
+    }
 
     // Step 3: Register video on Sui blockchain (server-side, no wallet needed)
     // This creates the VideoEntry in the registry so buyers can purchase access
