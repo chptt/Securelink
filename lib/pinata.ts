@@ -1,30 +1,23 @@
 /**
  * Pinata IPFS client — stores and retrieves encrypted video metadata.
  *
- * Each video is stored as a JSON file on IPFS:
- * {
- *   title, description, creator_address, thumbnail_url,
- *   encrypted_url, encryption_iv, encryption_auth_tag,
- *   price_sui, duration_hours, created_at
- * }
+ * ARCHITECTURE:
+ * - Public metadata (title, description, price, thumbnail, creator, duration)
+ *   is stored BOTH in Pinata keyvalues AND in the IPFS JSON.
+ *   This lets us list videos instantly from Pinata without fetching IPFS.
+ *
+ * - Sensitive data (encrypted_url, encryption_iv, encryption_auth_tag)
+ *   is stored ONLY in the IPFS JSON, fetched only at playback time.
  *
  * The IPFS CID is used as the video ID throughout the app.
  */
 
 import { PinataSDK } from "pinata";
 
-// Always use public IPFS gateway for fetching — no env var needed
-const PUBLIC_IPFS_GATEWAY = "ipfs.io";
-
 function getPinata() {
   const jwt = process.env.PINATA_JWT;
   if (!jwt) throw new Error("PINATA_JWT is not set");
-  return new PinataSDK({ pinataJwt: jwt, pinataGateway: PUBLIC_IPFS_GATEWAY });
-}
-
-function getGateway(): string {
-  // Use dedicated gateway if set, otherwise fall back to public IPFS
-  return process.env.NEXT_PUBLIC_PINATA_GATEWAY || PUBLIC_IPFS_GATEWAY;
+  return new PinataSDK({ pinataJwt: jwt, pinataGateway: "ipfs.io" });
 }
 
 export interface VideoMetadata {
@@ -48,6 +41,7 @@ export type PublicVideoMetadata = Omit<
 
 /**
  * Upload video metadata JSON to IPFS via Pinata.
+ * Public fields are also stored as keyvalues for fast listing.
  * Returns the IPFS CID which becomes the video ID.
  */
 export async function uploadVideoMetadata(
@@ -59,6 +53,8 @@ export async function uploadVideoMetadata(
     "metadata.json",
     { type: "application/json" }
   );
+
+  // Store public metadata in keyvalues so listing never needs IPFS fetch
   const result = await pinata.upload.public
     .file(file)
     .name(data.title)
@@ -66,42 +62,69 @@ export async function uploadVideoMetadata(
       type: "cipherview_video",
       creator: data.creator_address,
       created_at: data.created_at,
+      title: data.title,
+      description: data.description.slice(0, 200), // keyvalues have size limits
+      thumbnail_url: data.thumbnail_url,
+      price_sui: String(data.price_sui),
+      duration_hours: String(data.duration_hours),
     });
+
   return result.cid;
 }
 
 /**
- * Fetch video metadata JSON from IPFS by CID.
- * Tries dedicated gateway first, falls back to public IPFS gateway.
+ * Build PublicVideoMetadata from a Pinata file entry (no IPFS fetch needed).
  */
-export async function getVideoMetadata(cid: string): Promise<VideoMetadata> {
-  const gateway = getGateway();
-  const url = `https://${gateway}/ipfs/${cid}`;
-
-  const res = await fetch(url, {
-    next: { revalidate: 3600 },
-    headers: { Accept: "application/json" },
-  });
-
-  if (!res.ok) {
-    // Try public gateway as fallback
-    const fallbackUrl = `https://${PUBLIC_IPFS_GATEWAY}/ipfs/${cid}`;
-    const fallback = await fetch(fallbackUrl, {
-      next: { revalidate: 3600 },
-      headers: { Accept: "application/json" },
-    });
-    if (!fallback.ok) throw new Error(`Failed to fetch metadata for CID: ${cid}`);
-    const data = await fallback.json();
-    return { ...data, id: cid };
-  }
-
-  const data = await res.json();
-  return { ...data, id: cid };
+function fileToPublicVideo(file: {
+  cid: string;
+  keyvalues: Record<string, string>;
+}): PublicVideoMetadata | null {
+  const kv = file.keyvalues;
+  if (!kv.title || !kv.creator) return null;
+  return {
+    id: file.cid,
+    title: kv.title,
+    description: kv.description || "",
+    creator_address: kv.creator,
+    thumbnail_url: kv.thumbnail_url || "",
+    price_sui: parseFloat(kv.price_sui || "0"),
+    duration_hours: parseInt(kv.duration_hours || "24"),
+    created_at: kv.created_at || new Date().toISOString(),
+  };
 }
 
 /**
- * List all SecureLink videos from Pinata.
- * Filtered by keyvalue type="cipherview_video".
+ * Fetch full video metadata JSON from IPFS by CID (used only at playback).
+ */
+export async function getVideoMetadata(cid: string): Promise<VideoMetadata> {
+  // Try multiple gateways in order
+  const gateways = [
+    `https://ipfs.io/ipfs/${cid}`,
+    `https://dweb.link/ipfs/${cid}`,
+  ];
+
+  for (const url of gateways) {
+    try {
+      const res = await fetch(url, {
+        next: { revalidate: 3600 },
+        headers: { Accept: "application/json" },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        return { ...data, id: cid };
+      }
+    } catch {
+      // try next gateway
+    }
+  }
+
+  throw new Error(`Failed to fetch metadata for CID: ${cid}`);
+}
+
+/**
+ * List all SecureLink videos — reads from Pinata keyvalues, NO IPFS fetch.
+ * Fast and reliable for the explore page.
  */
 export async function listVideos(opts?: {
   limit?: number;
@@ -114,23 +137,15 @@ export async function listVideos(opts?: {
     .limit(opts?.limit ?? 20)
     .order("DESC");
 
-  const videos = await Promise.all(
-    result.files.map(async (file) => {
-      try {
-        const meta = await getVideoMetadata(file.cid);
-        const { encrypted_url, encryption_iv, encryption_auth_tag, ...pub } = meta;
-        return pub;
-      } catch {
-        return null;
-      }
-    })
-  ).then((arr) => arr.filter(Boolean) as PublicVideoMetadata[]);
+  const videos = result.files
+    .map((file) => fileToPublicVideo(file as { cid: string; keyvalues: Record<string, string> }))
+    .filter(Boolean) as PublicVideoMetadata[];
 
   return { videos };
 }
 
 /**
- * List videos uploaded by a specific creator address.
+ * List videos by creator — reads from Pinata keyvalues, NO IPFS fetch.
  */
 export async function listVideosByCreator(
   creatorAddress: string
@@ -143,17 +158,7 @@ export async function listVideosByCreator(
     .limit(50)
     .order("DESC");
 
-  const videos = await Promise.all(
-    result.files.map(async (file) => {
-      try {
-        const meta = await getVideoMetadata(file.cid);
-        const { encrypted_url, encryption_iv, encryption_auth_tag, ...pub } = meta;
-        return pub;
-      } catch {
-        return null;
-      }
-    })
-  ).then((arr) => arr.filter(Boolean) as PublicVideoMetadata[]);
-
-  return videos;
+  return result.files
+    .map((file) => fileToPublicVideo(file as { cid: string; keyvalues: Record<string, string> }))
+    .filter(Boolean) as PublicVideoMetadata[];
 }
