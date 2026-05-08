@@ -2,6 +2,7 @@ export const dynamic = "force-dynamic";
 
 import { NextRequest, NextResponse } from "next/server";
 import { listVideosByCreator } from "@/lib/pinata";
+import { getPurchasesByBuyer } from "@/lib/purchases";
 import { getUserAccessPasses } from "@/lib/sui";
 
 export async function GET(
@@ -16,26 +17,25 @@ export async function GET(
     }
 
     // Run both in parallel, handle each failure independently
-    const [uploadedResult, passesResult] = await Promise.allSettled([
+    const [uploaded, purchases] = await Promise.allSettled([
       listVideosByCreator(address),
-      getUserAccessPasses(address),
+      getPurchasesByBuyer(address),
     ]);
 
-    const uploaded = uploadedResult.status === "fulfilled" ? uploadedResult.value : [];
-    const passes = passesResult.status === "fulfilled" ? passesResult.value : [];
-
-    if (uploadedResult.status === "rejected") {
-      console.error("[dashboard] listVideosByCreator failed:", uploadedResult.reason);
+    if (uploaded.status === "rejected") {
+      console.error("[dashboard] listVideosByCreator failed:", uploaded.reason);
     }
-    if (passesResult.status === "rejected") {
-      console.error("[dashboard] getUserAccessPasses failed:", passesResult.reason);
+    if (purchases.status === "rejected") {
+      console.error("[dashboard] getPurchasesByBuyer failed:", purchases.reason);
     }
 
-    const earnings = uploaded.reduce((sum, v) => sum + (v.price_sui || 0), 0);
+    const uploadedVideos = uploaded.status === "fulfilled" ? uploaded.value : [];
+    const purchasedList = purchases.status === "fulfilled" ? purchases.value : [];
+    const earnings = uploadedVideos.reduce((sum, v) => sum + (v.price_sui || 0), 0);
 
     return NextResponse.json({
-      uploaded,
-      purchased: passes,
+      uploaded: uploadedVideos,
+      purchased: purchasedList,
       earnings,
       transactions: [],
     });

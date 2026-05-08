@@ -4,7 +4,7 @@
  *
  * Rules:
  * - Verify user is authenticated
- * - Verify VideoAccessPass NFT exists on Sui and is not expired
+ * - Verify purchase exists and is not expired
  * - Fetch encrypted metadata from IPFS
  * - Decrypt embed URL server-side
  * - Return embed URL ONLY in this response
@@ -16,7 +16,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
 import { decryptText } from "@/lib/crypto";
 import { getVideoMetadata } from "@/lib/pinata";
-import { getUserAccessPass } from "@/lib/sui";
+import { getPurchase } from "@/lib/purchases";
 import { secondsUntil } from "@/lib/utils";
 
 export async function POST(
@@ -32,11 +32,18 @@ export async function POST(
 
     const { id: videoCid } = params;
 
-    // Step 2: Verify VideoAccessPass on Sui blockchain
-    const pass = await getUserAccessPass(user.address, videoCid);
-    if (!pass || !pass.isValid) {
+    // Step 2: Verify purchase exists and is not expired
+    const purchase = await getPurchase(videoCid, user.address);
+    if (!purchase) {
       return NextResponse.json(
         { error: "No active purchase found. Please purchase access first." },
+        { status: 403 }
+      );
+    }
+
+    if (new Date(purchase.expiresAt) < new Date()) {
+      return NextResponse.json(
+        { error: "Your access has expired. Please purchase again." },
         { status: 403 }
       );
     }
@@ -60,12 +67,12 @@ export async function POST(
       return NextResponse.json({ error: "Failed to decrypt video" }, { status: 500 });
     }
 
-    const remaining = secondsUntil(pass.expiresAt);
+    const remaining = secondsUntil(purchase.expiresAt);
 
     // Step 5: Return embed URL — NEVER log it
     return NextResponse.json({
       embedUrl,
-      expiresAt: pass.expiresAt,
+      expiresAt: purchase.expiresAt,
       remainingSeconds: remaining,
     });
   } catch (err) {

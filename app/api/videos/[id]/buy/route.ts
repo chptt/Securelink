@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
 import { getVideoMetadata } from "@/lib/pinata";
+import { storePurchase } from "@/lib/purchases";
 
 export async function POST(
   req: NextRequest,
@@ -14,27 +15,30 @@ export async function POST(
 
     const { id: videoCid } = params;
     const body = await req.json();
-    const { txDigest, expiresAt } = body;
+    const { txDigest } = body;
 
-    // Verify the video exists on IPFS
-    const meta = await getVideoMetadata(videoCid);
-    if (!meta) {
-      return NextResponse.json({ error: "Video not found" }, { status: 404 });
+    // Fetch video metadata to get duration
+    let durationHours = 24;
+    try {
+      const meta = await getVideoMetadata(videoCid);
+      durationHours = meta.duration_hours;
+    } catch {
+      // use default duration if IPFS fetch fails
     }
 
-    // Purchase is recorded on-chain via Sui VideoAccessPass NFT.
-    // The client already executed the Sui transaction and passes back
-    // the txDigest and computed expiresAt from the blockchain result.
-    // We just validate and echo back the expiry.
-    if (!expiresAt) {
-      // Compute expiry from video duration as fallback
-      const computedExpiry = new Date(
-        Date.now() + meta.duration_hours * 60 * 60 * 1000
-      ).toISOString();
-      return NextResponse.json({ success: true, expiresAt: computedExpiry });
-    }
+    const expiresAt = new Date(
+      Date.now() + durationHours * 60 * 60 * 1000
+    ).toISOString();
 
-    return NextResponse.json({ success: true, expiresAt, txDigest });
+    // Store purchase record server-side
+    await storePurchase({
+      videoCid,
+      buyerAddress: user.address,
+      expiresAt,
+      txDigest: txDigest || "mock",
+    });
+
+    return NextResponse.json({ success: true, expiresAt });
   } catch (err) {
     console.error("[buy] Error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

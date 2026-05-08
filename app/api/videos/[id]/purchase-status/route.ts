@@ -1,5 +1,5 @@
 ﻿import { NextRequest, NextResponse } from "next/server";
-import { getUserAccessPass } from "@/lib/sui";
+import { getPurchase } from "@/lib/purchases";
 
 export async function GET(
   req: NextRequest,
@@ -10,15 +10,15 @@ export async function GET(
     if (!address) return NextResponse.json({ purchase: null });
 
     const { id: videoCid } = params;
+    const purchase = await getPurchase(videoCid, address);
 
-    // Query Sui blockchain for a valid VideoAccessPass NFT
-    const pass = await getUserAccessPass(address, videoCid);
-    if (!pass) return NextResponse.json({ purchase: null });
+    if (!purchase) return NextResponse.json({ purchase: null });
 
+    const isExpired = new Date(purchase.expiresAt) < new Date();
     return NextResponse.json({
       purchase: {
-        expires_at: pass.expiresAt,
-        status: pass.isValid ? "active" : "expired",
+        expires_at: purchase.expiresAt,
+        status: isExpired ? "expired" : "active",
       },
     });
   } catch (err) {
