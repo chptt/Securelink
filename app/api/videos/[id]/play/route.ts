@@ -1,11 +1,12 @@
 /**
  * CRITICAL SECURITY ENDPOINT
  * This is the ONLY place where decryption occurs.
- * 
+ *
  * Rules:
  * - Verify user is authenticated
- * - Verify purchase exists and is not expired
- * - Decrypt embed URL
+ * - Verify VideoAccessPass NFT exists on Sui and is not expired
+ * - Fetch encrypted metadata from IPFS
+ * - Decrypt embed URL server-side
  * - Return embed URL ONLY in this response
  * - NEVER log the decrypted URL
  * - NEVER store the decrypted URL
@@ -14,15 +15,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
 import { decryptText } from "@/lib/crypto";
-import { getSupabaseAdmin } from "@/lib/supabase";
-import { MOCK_VIDEOS, MOCK_EMBED_URLS, mockPurchases } from "@/lib/mock-data";
+import { getVideoMetadata } from "@/lib/pinata";
+import { getUserAccessPass } from "@/lib/sui";
 import { secondsUntil } from "@/lib/utils";
 
-const DEV_MODE = process.env.NEXT_PUBLIC_DEV_MODE === "true";
-const SUPABASE_CONFIGURED = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
-
 export async function POST(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
@@ -32,83 +30,42 @@ export async function POST(
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id: videoId } = params;
+    const { id: videoCid } = params;
 
-    // Always use mock flow for mock video IDs (shown when DB is empty)
-    if (videoId.startsWith("mock-") || (DEV_MODE && !SUPABASE_CONFIGURED)) {
-      const video = MOCK_VIDEOS.find((v) => v.id === videoId);
-      if (!video) {
-        return NextResponse.json({ error: "Video not found" }, { status: 404 });
-      }
-      const purchaseKey = `${user.address}:${videoId}`;
-      const purchase = mockPurchases[purchaseKey];
-      if (!purchase) {
-        return NextResponse.json({ error: "No active purchase found" }, { status: 403 });
-      }
-      if (new Date(purchase.expires_at) < new Date()) {
-        return NextResponse.json({ error: "Access has expired" }, { status: 403 });
-      }
-      const embedUrl = MOCK_EMBED_URLS[videoId];
-      if (!embedUrl) {
-        return NextResponse.json({ error: "Video not available" }, { status: 404 });
-      }
-      const remaining = secondsUntil(purchase.expires_at);
-      return NextResponse.json({
-        embedUrl,
-        expiresAt: purchase.expires_at,
-        remainingSeconds: remaining,
-        mock: true,
-      });
-    }
-
-    const supabase = getSupabaseAdmin();
-
-    // Step 2: Verify purchase exists and is active
-    const { data: purchase, error: purchaseError } = await supabase
-      .from("purchases")
-      .select("id, expires_at, status")
-      .eq("video_id", videoId)
-      .eq("buyer_address", user.address)
-      .gt("expires_at", new Date().toISOString())
-      .single();
-
-    if (purchaseError || !purchase) {
+    // Step 2: Verify VideoAccessPass on Sui blockchain
+    const pass = await getUserAccessPass(user.address, videoCid);
+    if (!pass || !pass.isValid) {
       return NextResponse.json(
         { error: "No active purchase found. Please purchase access first." },
         { status: 403 }
       );
     }
 
-    // Step 3: Fetch encrypted video data
-    const { data: video, error: videoError } = await supabase
-      .from("videos")
-      .select("encrypted_url, encryption_iv, encryption_auth_tag")
-      .eq("id", videoId)
-      .single();
-
-    if (videoError || !video) {
+    // Step 3: Fetch encrypted metadata from IPFS
+    const meta = await getVideoMetadata(videoCid);
+    if (!meta) {
       return NextResponse.json({ error: "Video not found" }, { status: 404 });
     }
 
-    // Step 4: DECRYPT — only happens here
+    // Step 4: DECRYPT — only happens here, never logged
     let embedUrl: string;
     try {
       embedUrl = decryptText(
-        video.encrypted_url,
-        video.encryption_iv,
-        video.encryption_auth_tag
+        meta.encrypted_url,
+        meta.encryption_iv,
+        meta.encryption_auth_tag
       );
     } catch {
-      console.error("[play] Decryption failed for video:", videoId);
+      console.error("[play] Decryption failed for video:", videoCid);
       return NextResponse.json({ error: "Failed to decrypt video" }, { status: 500 });
     }
 
-    const remaining = secondsUntil(purchase.expires_at);
+    const remaining = secondsUntil(pass.expiresAt);
 
     // Step 5: Return embed URL — NEVER log it
     return NextResponse.json({
       embedUrl,
-      expiresAt: purchase.expires_at,
+      expiresAt: pass.expiresAt,
       remainingSeconds: remaining,
     });
   } catch (err) {

@@ -1,51 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getSupabaseAdmin } from "@/lib/supabase";
-import { MOCK_VIDEOS } from "@/lib/mock-data";
-
-const DEV_MODE = process.env.NEXT_PUBLIC_DEV_MODE === "true";
-const SUPABASE_CONFIGURED = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+import { getVideoMetadata } from "@/lib/pinata";
 
 export async function GET(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
-    const { id } = params;
-
-    // Always serve mock data for mock IDs regardless of Supabase config
-    if (id.startsWith("mock-")) {
-      const video = MOCK_VIDEOS.find((v) => v.id === id);
-      if (!video) {
-        return NextResponse.json({ error: "Video not found" }, { status: 404 });
-      }
-      return NextResponse.json({ video, mock: true });
-    }
-
-    if (DEV_MODE && !SUPABASE_CONFIGURED) {
-      const video = MOCK_VIDEOS.find((v) => v.id === id);
-      if (!video) {
-        return NextResponse.json({ error: "Video not found" }, { status: 404 });
-      }
-      return NextResponse.json({ video, mock: true });
-    }
-
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("videos")
-      // SECURITY: never select encrypted fields in this route
-      .select(
-        "id, title, description, creator_address, thumbnail_url, price_sui, duration_hours, created_at"
-      )
-      .eq("id", id)
-      .single();
-
-    if (error || !data) {
-      return NextResponse.json({ error: "Video not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({ video: data });
+    const meta = await getVideoMetadata(params.id);
+    // Never return encrypted fields to the client
+    const { encrypted_url, encryption_iv, encryption_auth_tag, ...pub } = meta;
+    return NextResponse.json({ video: pub });
   } catch (err) {
     console.error("[video/id] Error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({ error: "Video not found" }, { status: 404 });
   }
 }

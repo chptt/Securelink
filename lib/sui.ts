@@ -1,6 +1,5 @@
 /**
  * Sui blockchain integration helpers
- * Supports both real Sui Testnet and mock dev mode
  */
 
 const DEV_MODE = process.env.NEXT_PUBLIC_DEV_MODE === "true";
@@ -31,12 +30,17 @@ export interface BuyAccessParams {
 export interface BuyAccessResult {
   txDigest: string;
   success: boolean;
+  expiresAt?: string;
   mock?: boolean;
 }
 
-/**
- * Creates a mock transaction digest for dev mode
- */
+export interface AccessPass {
+  objectId: string;
+  videoId: string;
+  expiresAt: string; // ISO string
+  isValid: boolean;
+}
+
 function mockTxDigest(): string {
   const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
   let result = "";
@@ -55,25 +59,16 @@ export async function executeBuyAccess(
   signAndExecute?: (tx: unknown) => Promise<{ digest: string }>
 ): Promise<BuyAccessResult> {
   if (DEV_MODE || !PACKAGE_ID || !signAndExecute) {
-    // Mock mode
-    await new Promise((r) => setTimeout(r, 1500)); // simulate network delay
-    return {
-      txDigest: mockTxDigest(),
-      success: true,
-      mock: true,
-    };
+    await new Promise((r) => setTimeout(r, 1500));
+    const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
+    return { txDigest: mockTxDigest(), success: true, expiresAt, mock: true };
   }
 
   try {
-    // Real Sui transaction
-    // Dynamic import to avoid SSR issues
     const { Transaction } = await import("@mysten/sui/transactions");
     const tx = new Transaction();
-
     const priceInMist = BigInt(Math.floor(params.priceInSui * 1_000_000_000));
-
     const [coin] = tx.splitCoins(tx.gas, [tx.pure.u64(priceInMist)]);
-
     tx.moveCall({
       target: `${PACKAGE_ID}::cipherview::buy_access`,
       arguments: [
@@ -83,7 +78,6 @@ export async function executeBuyAccess(
         tx.object("0x6"), // Sui clock
       ],
     });
-
     const result = await signAndExecute(tx);
     return { txDigest: result.digest, success: true };
   } catch (error) {
@@ -93,29 +87,98 @@ export async function executeBuyAccess(
 }
 
 /**
- * Verifies access on-chain (dev mode always returns true)
+ * Query Sui for a user's VideoAccessPass for a specific video.
+ * Returns the pass with expiry info, or null if not found.
  */
-export async function verifyOnChainAccess(
-  buyerAddress: string,
-  videoId: string
-): Promise<boolean> {
-  if (DEV_MODE || !PACKAGE_ID) {
-    return true;
-  }
+export async function getUserAccessPass(
+  address: string,
+  videoCid: string
+): Promise<AccessPass | null> {
+  if (DEV_MODE || !PACKAGE_ID) return null;
 
   try {
     const { SuiClient, getFullnodeUrl } = await import("@mysten/sui/client");
-    const client = new SuiClient({ url: getFullnodeUrl(SUI_NETWORK as "testnet" | "mainnet" | "devnet") });
-
-    // Query the registry object for access pass
-    const result = await client.devInspectTransactionBlock({
-      sender: buyerAddress,
-      transactionBlock: {} as never, // simplified — real impl would call has_valid_access
+    const client = new SuiClient({
+      url: getFullnodeUrl(SUI_NETWORK as "testnet" | "mainnet" | "devnet"),
     });
 
-    return !!result;
-  } catch {
-    return false;
+    // Fetch all VideoAccessPass objects owned by this address
+    const objects = await client.getOwnedObjects({
+      owner: address,
+      filter: {
+        StructType: `${PACKAGE_ID}::cipherview::VideoAccessPass`,
+      },
+      options: { showContent: true },
+    });
+
+    const now = Date.now();
+
+    for (const obj of objects.data) {
+      const content = obj.data?.content;
+      if (content?.dataType !== "moveObject") continue;
+
+      const fields = content.fields as Record<string, unknown>;
+      const objVideoId = fields.video_id as string;
+      const expiresAtMs = Number(fields.expires_at_ms);
+
+      if (objVideoId === videoCid) {
+        const expiresAt = new Date(expiresAtMs).toISOString();
+        return {
+          objectId: obj.data?.objectId ?? "",
+          videoId: videoCid,
+          expiresAt,
+          isValid: expiresAtMs > now,
+        };
+      }
+    }
+
+    return null;
+  } catch (err) {
+    console.error("[sui] getUserAccessPass error:", err);
+    return null;
+  }
+}
+
+/**
+ * Get all VideoAccessPass objects owned by an address (for dashboard).
+ */
+export async function getUserAccessPasses(address: string): Promise<AccessPass[]> {
+  if (DEV_MODE || !PACKAGE_ID) return [];
+
+  try {
+    const { SuiClient, getFullnodeUrl } = await import("@mysten/sui/client");
+    const client = new SuiClient({
+      url: getFullnodeUrl(SUI_NETWORK as "testnet" | "mainnet" | "devnet"),
+    });
+
+    const objects = await client.getOwnedObjects({
+      owner: address,
+      filter: {
+        StructType: `${PACKAGE_ID}::cipherview::VideoAccessPass`,
+      },
+      options: { showContent: true },
+    });
+
+    const now = Date.now();
+    const passes: AccessPass[] = [];
+
+    for (const obj of objects.data) {
+      const content = obj.data?.content;
+      if (content?.dataType !== "moveObject") continue;
+      const fields = content.fields as Record<string, unknown>;
+      const expiresAtMs = Number(fields.expires_at_ms);
+      passes.push({
+        objectId: obj.data?.objectId ?? "",
+        videoId: fields.video_id as string,
+        expiresAt: new Date(expiresAtMs).toISOString(),
+        isValid: expiresAtMs > now,
+      });
+    }
+
+    return passes;
+  } catch (err) {
+    console.error("[sui] getUserAccessPasses error:", err);
+    return [];
   }
 }
 

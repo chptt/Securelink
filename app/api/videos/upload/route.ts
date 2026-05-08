@@ -2,11 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
 import { encryptText } from "@/lib/crypto";
 import { extractYouTubeId, getEmbedUrl, getThumbnailMedium, isValidYouTubeUrl } from "@/lib/youtube";
-import { getSupabaseAdmin } from "@/lib/supabase";
-import { MOCK_VIDEOS, MOCK_EMBED_URLS } from "@/lib/mock-data";
-
-const DEV_MODE = process.env.NEXT_PUBLIC_DEV_MODE === "true";
-const SUPABASE_CONFIGURED = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+import { uploadVideoMetadata } from "@/lib/pinata";
 
 export async function POST(req: NextRequest) {
   try {
@@ -41,10 +37,12 @@ export async function POST(req: NextRequest) {
     const embedUrl = getEmbedUrl(videoId);
     const thumbnailUrl = getThumbnailMedium(videoId);
 
-    // ENCRYPT the embed URL — never store plaintext
+    // Encrypt the embed URL — never store plaintext
     const { encryptedUrl, iv, authTag } = encryptText(embedUrl);
 
-    const videoData = {
+    // Upload metadata JSON to IPFS via Pinata
+    // The returned CID becomes the video ID
+    const cid = await uploadVideoMetadata({
       title: title.trim(),
       description: description?.trim() || "",
       creator_address: user.address,
@@ -54,49 +52,10 @@ export async function POST(req: NextRequest) {
       encryption_auth_tag: authTag,
       price_sui: parseFloat(priceSui),
       duration_hours: parseInt(durationHours),
-    };
+      created_at: new Date().toISOString(),
+    });
 
-    if (DEV_MODE && !SUPABASE_CONFIGURED) {
-      // Mock mode — store in memory
-      const mockId = `mock-${Date.now()}`;
-      const mockVideo = {
-        id: mockId,
-        ...videoData,
-        created_at: new Date().toISOString(),
-      };
-      MOCK_VIDEOS.unshift({
-        id: mockId,
-        title: videoData.title,
-        description: videoData.description,
-        creator_address: videoData.creator_address,
-        thumbnail_url: videoData.thumbnail_url,
-        price_sui: videoData.price_sui,
-        duration_hours: videoData.duration_hours,
-        created_at: mockVideo.created_at,
-      });
-      MOCK_EMBED_URLS[mockId] = embedUrl;
-
-      return NextResponse.json({
-        success: true,
-        videoId: mockId,
-        mock: true,
-      });
-    }
-
-    // Real Supabase insert
-    const supabase = getSupabaseAdmin();
-    const { data, error } = await supabase
-      .from("videos")
-      .insert(videoData)
-      .select("id")
-      .single();
-
-    if (error) {
-      console.error("[upload] Supabase error:", error.message);
-      return NextResponse.json({ error: "Failed to save video" }, { status: 500 });
-    }
-
-    return NextResponse.json({ success: true, videoId: data.id });
+    return NextResponse.json({ success: true, videoId: cid });
   } catch (err) {
     console.error("[upload] Error:", err);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });

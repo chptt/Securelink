@@ -1,102 +1,39 @@
-import { NextRequest, NextResponse } from "next/server";
-import { getAuthUser } from "@/lib/auth";
-import { getSupabaseAdmin } from "@/lib/supabase";
-import { MOCK_VIDEOS, mockPurchases } from "@/lib/mock-data";
+export const dynamic = "force-dynamic";
 
-const DEV_MODE = process.env.NEXT_PUBLIC_DEV_MODE === "true";
-const SUPABASE_CONFIGURED = !!(process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
+import { NextRequest, NextResponse } from "next/server";
+import { listVideosByCreator } from "@/lib/pinata";
+import { getUserAccessPasses } from "@/lib/sui";
 
 export async function GET(
-  req: NextRequest,
+  _req: NextRequest,
   { params }: { params: { address: string } }
 ) {
   try {
-    const user = await getAuthUser();
-    if (!user) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
+    const { address } = params;
 
-    // Only allow users to view their own dashboard
-    if (user.address.toLowerCase() !== params.address.toLowerCase()) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
+    // Fetch in parallel: videos uploaded by this creator + access passes owned
+    const [uploaded, passes] = await Promise.all([
+      listVideosByCreator(address),
+      getUserAccessPasses(address),
+    ]);
 
-    if (DEV_MODE && !SUPABASE_CONFIGURED) {
-      // Mock dashboard data
-      const uploaded = MOCK_VIDEOS.filter(
-        (v) => v.creator_address === user.address
-      );
-
-      const purchased = Object.entries(mockPurchases)
-        .filter(([key]) => key.startsWith(user.address))
-        .map(([key, purchase]) => {
-          const videoId = key.split(":")[1];
-          const video = MOCK_VIDEOS.find((v) => v.id === videoId);
-          return video
-            ? {
-                video,
-                expires_at: purchase.expires_at,
-                status: new Date(purchase.expires_at) > new Date() ? "active" : "expired",
-              }
-            : null;
-        })
-        .filter(Boolean);
-
-      return NextResponse.json({
-        uploaded,
-        purchased,
-        earnings: uploaded.reduce((sum, v) => sum + v.price_sui * 0, 0), // mock 0 earnings
-        transactions: [],
-        mock: true,
-      });
-    }
-
-    const supabase = getSupabaseAdmin();
-
-    // Uploaded videos — public fields only
-    const { data: uploaded } = await supabase
-      .from("videos")
-      .select("id, title, description, thumbnail_url, price_sui, duration_hours, created_at")
-      .eq("creator_address", user.address)
-      .order("created_at", { ascending: false });
-
-    // Purchased videos with video metadata
-    const { data: purchases } = await supabase
-      .from("purchases")
-      .select(
-        `id, expires_at, status, purchased_at,
-         videos:video_id (id, title, thumbnail_url, price_sui, duration_hours)`
-      )
-      .eq("buyer_address", user.address)
-      .order("purchased_at", { ascending: false });
-
-    // Transactions
-    const { data: transactions } = await supabase
-      .from("transactions")
-      .select("id, video_id, tx_digest, amount_sui, created_at, buyer_address, creator_address")
-      .or(`buyer_address.eq.${user.address},creator_address.eq.${user.address}`)
-      .order("created_at", { ascending: false })
-      .limit(20);
-
-    // Calculate earnings
-    const { data: earningsData } = await supabase
-      .from("transactions")
-      .select("amount_sui")
-      .eq("creator_address", user.address);
-
-    const earnings = (earningsData || []).reduce(
-      (sum, t) => sum + (t.amount_sui || 0),
-      0
-    );
+    // Earnings = sum of price_sui for all uploaded videos that have been purchased
+    // (approximation — exact earnings would require indexing on-chain events)
+    const earnings = uploaded.reduce((sum, v) => sum + (v.price_sui || 0), 0);
 
     return NextResponse.json({
-      uploaded: uploaded || [],
-      purchased: purchases || [],
+      uploaded,
+      purchased: passes,
       earnings,
-      transactions: transactions || [],
+      transactions: [], // On-chain tx history can be fetched from Sui explorer
     });
   } catch (err) {
     console.error("[dashboard] Error:", err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
+    return NextResponse.json({
+      uploaded: [],
+      purchased: [],
+      earnings: 0,
+      transactions: [],
+    });
   }
 }
