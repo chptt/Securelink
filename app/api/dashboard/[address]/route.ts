@@ -11,21 +11,33 @@ export async function GET(
   try {
     const { address } = params;
 
-    // Fetch in parallel: videos uploaded by this creator + access passes owned
-    const [uploaded, passes] = await Promise.all([
+    if (!address) {
+      return NextResponse.json({ uploaded: [], purchased: [], earnings: 0, transactions: [] });
+    }
+
+    // Run both in parallel, handle each failure independently
+    const [uploadedResult, passesResult] = await Promise.allSettled([
       listVideosByCreator(address),
       getUserAccessPasses(address),
     ]);
 
-    // Earnings = sum of price_sui for all uploaded videos that have been purchased
-    // (approximation — exact earnings would require indexing on-chain events)
+    const uploaded = uploadedResult.status === "fulfilled" ? uploadedResult.value : [];
+    const passes = passesResult.status === "fulfilled" ? passesResult.value : [];
+
+    if (uploadedResult.status === "rejected") {
+      console.error("[dashboard] listVideosByCreator failed:", uploadedResult.reason);
+    }
+    if (passesResult.status === "rejected") {
+      console.error("[dashboard] getUserAccessPasses failed:", passesResult.reason);
+    }
+
     const earnings = uploaded.reduce((sum, v) => sum + (v.price_sui || 0), 0);
 
     return NextResponse.json({
       uploaded,
       purchased: passes,
       earnings,
-      transactions: [], // On-chain tx history can be fetched from Sui explorer
+      transactions: [],
     });
   } catch (err) {
     console.error("[dashboard] Error:", err);

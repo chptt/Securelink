@@ -120,23 +120,21 @@ export default function DashboardPage() {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                   {data.purchased.map((p: any) => {
-                    const vid = p.video || p.videos;
-                    if (!vid) return null;
-                    const active = !isExpired(p.expires_at);
+                    const active = !isExpired(p.expiresAt || p.expires_at);
+                    const expiresAt = p.expiresAt || p.expires_at;
                     return (
-                      <motion.div key={p.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
+                      <motion.div key={p.objectId || p.id} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}>
                         <div className="glass rounded-2xl overflow-hidden border border-white/5">
-                          <div className="relative aspect-video bg-muted">
-                            <Image src={vid.thumbnail_url} alt={vid.title} fill className="object-cover" unoptimized />
-                            <div className="absolute top-2 right-2">
-                              <AccessBadge status={active ? "active" : "expired"} remainingSeconds={active ? secondsUntil(p.expires_at) : undefined} />
-                            </div>
-                          </div>
                           <div className="p-4 space-y-3">
-                            <h3 className="font-semibold text-sm line-clamp-1">{vid.title}</h3>
-                            <p className="text-xs text-muted-foreground">Expires: {formatDate(p.expires_at)}</p>
-                            {active && (
-                              <Link href={`/watch/${vid.id}`}>
+                            <div className="flex items-center justify-between">
+                              <p className="text-xs text-muted-foreground font-mono truncate max-w-[160px]">
+                                {p.videoId ? `${p.videoId.slice(0, 16)}...` : "Unknown video"}
+                              </p>
+                              <AccessBadge status={active ? "active" : "expired"} remainingSeconds={active ? secondsUntil(expiresAt) : undefined} />
+                            </div>
+                            <p className="text-xs text-muted-foreground">Expires: {expiresAt ? formatDate(expiresAt) : "—"}</p>
+                            {active && p.videoId && (
+                              <Link href={`/watch/${p.videoId}`}>
                                 <button className="w-full flex items-center justify-center gap-2 py-2 rounded-lg bg-gradient-to-r from-cyan-500/20 to-violet-500/20 border border-cyan-500/20 text-cyan-400 text-sm hover:from-cyan-500/30 hover:to-violet-500/30 transition-all">
                                   <Play className="w-4 h-4" />Watch Now
                                 </button>

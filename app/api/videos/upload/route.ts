@@ -3,6 +3,7 @@ import { getAuthUser } from "@/lib/auth";
 import { encryptText } from "@/lib/crypto";
 import { extractYouTubeId, getEmbedUrl, getThumbnailMedium, isValidYouTubeUrl } from "@/lib/youtube";
 import { uploadVideoMetadata } from "@/lib/pinata";
+import { registerVideoOnChain } from "@/lib/sui";
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,7 +29,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Duration must be greater than 0" }, { status: 400 });
     }
 
-    // Extract YouTube ID and build embed URL
     const videoId = extractYouTubeId(youtubeUrl);
     if (!videoId) {
       return NextResponse.json({ error: "Could not extract YouTube video ID" }, { status: 400 });
@@ -37,10 +37,10 @@ export async function POST(req: NextRequest) {
     const embedUrl = getEmbedUrl(videoId);
     const thumbnailUrl = getThumbnailMedium(videoId);
 
-    // Encrypt the embed URL — never store plaintext
+    // Step 1: Encrypt the embed URL — never store plaintext
     const { encryptedUrl, iv, authTag } = encryptText(embedUrl);
 
-    // Upload metadata JSON to IPFS via Pinata
+    // Step 2: Upload encrypted metadata JSON to IPFS via Pinata
     // The returned CID becomes the video ID
     const cid = await uploadVideoMetadata({
       title: title.trim(),
@@ -54,6 +54,20 @@ export async function POST(req: NextRequest) {
       duration_hours: parseInt(durationHours),
       created_at: new Date().toISOString(),
     });
+
+    // Step 3: Register video on Sui blockchain (server-side, no wallet needed)
+    // This creates the VideoEntry in the registry so buyers can purchase access
+    try {
+      await registerVideoOnChain({
+        videoCid: cid,
+        priceInSui: parseFloat(priceSui),
+        durationHours: parseInt(durationHours),
+        creatorAddress: user.address,
+      });
+    } catch (suiErr) {
+      // Non-fatal: video is on IPFS, Sui registration can be retried
+      console.error("[upload] Sui registration failed (non-fatal):", suiErr);
+    }
 
     return NextResponse.json({ success: true, videoId: cid });
   } catch (err) {

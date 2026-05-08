@@ -182,4 +182,62 @@ export async function getUserAccessPasses(address: string): Promise<AccessPass[]
   }
 }
 
+export interface RegisterVideoParams {
+  videoCid: string;
+  priceInSui: number;
+  durationHours: number;
+  creatorAddress: string;
+}
+
+/**
+ * Registers a video in the Sui VideoRegistry (server-side, uses admin keypair).
+ * Called after uploading metadata to IPFS.
+ * In dev mode or when PACKAGE_ID is not set, this is a no-op.
+ */
+export async function registerVideoOnChain(params: RegisterVideoParams): Promise<void> {
+  if (DEV_MODE || !PACKAGE_ID || !REGISTRY_OBJECT_ID) {
+    console.log("[sui] registerVideoOnChain skipped — dev mode or no package ID");
+    return;
+  }
+
+  try {
+    const { SuiClient, getFullnodeUrl } = await import("@mysten/sui/client");
+    const { Transaction } = await import("@mysten/sui/transactions");
+    const { Ed25519Keypair } = await import("@mysten/sui/keypairs/ed25519");
+
+    const adminKey = process.env.SUI_ADMIN_PRIVATE_KEY;
+    if (!adminKey) {
+      console.warn("[sui] SUI_ADMIN_PRIVATE_KEY not set — skipping on-chain registration");
+      return;
+    }
+
+    const keypair = Ed25519Keypair.fromSecretKey(adminKey);
+    const client = new SuiClient({
+      url: getFullnodeUrl(SUI_NETWORK as "testnet" | "mainnet" | "devnet"),
+    });
+
+    const priceInMist = BigInt(Math.floor(params.priceInSui * 1_000_000_000));
+    const durationMs = BigInt(params.durationHours * 60 * 60 * 1000);
+
+    const tx = new Transaction();
+    tx.moveCall({
+      target: `${PACKAGE_ID}::cipherview::create_video`,
+      arguments: [
+        tx.object(REGISTRY_OBJECT_ID),
+        tx.pure.string(params.videoCid),
+        tx.pure.u64(priceInMist),
+        tx.pure.u64(durationMs),
+      ],
+    });
+
+    await client.signAndExecuteTransaction({
+      transaction: tx,
+      signer: keypair,
+    });
+  } catch (err) {
+    console.error("[sui] registerVideoOnChain error:", err);
+    throw err;
+  }
+}
+
 export { DEV_MODE, SUI_NETWORK, PACKAGE_ID, REGISTRY_OBJECT_ID };
