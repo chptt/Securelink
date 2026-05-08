@@ -13,19 +13,17 @@
 
 import { PinataSDK } from "pinata";
 
-// Public IPFS gateway fallback — used when dedicated gateway is not configured
+// Always use public IPFS gateway for fetching — no env var needed
 const PUBLIC_IPFS_GATEWAY = "ipfs.io";
 
 function getPinata() {
   const jwt = process.env.PINATA_JWT;
   if (!jwt) throw new Error("PINATA_JWT is not set");
-
-  // Gateway is optional — fall back to public IPFS gateway
-  const gateway = process.env.NEXT_PUBLIC_PINATA_GATEWAY || PUBLIC_IPFS_GATEWAY;
-  return new PinataSDK({ pinataJwt: jwt, pinataGateway: gateway });
+  return new PinataSDK({ pinataJwt: jwt, pinataGateway: PUBLIC_IPFS_GATEWAY });
 }
 
 function getGateway(): string {
+  // Use dedicated gateway if set, otherwise fall back to public IPFS
   return process.env.NEXT_PUBLIC_PINATA_GATEWAY || PUBLIC_IPFS_GATEWAY;
 }
 
