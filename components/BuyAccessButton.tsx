@@ -3,13 +3,15 @@
 import { useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import { motion } from "framer-motion";
-import { ShoppingCart, Loader2, CheckCircle, ExternalLink } from "lucide-react";
+import { ShoppingCart, Loader2, Wallet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/components/ui/use-toast";
 import { TransactionModal } from "./TransactionModal";
-import { executeBuyAccess } from "@/lib/sui";
 import { formatSui } from "@/lib/utils";
+import { useSignAndExecuteTransaction, useCurrentAccount, ConnectModal } from "@mysten/dapp-kit";
+
+const PACKAGE_ID = process.env.NEXT_PUBLIC_PACKAGE_ID || "";
+const REGISTRY_OBJECT_ID = process.env.NEXT_PUBLIC_REGISTRY_OBJECT_ID || "";
 
 interface BuyAccessButtonProps {
   videoId: string;
@@ -32,8 +34,10 @@ export function BuyAccessButton({
   const [loading, setLoading] = useState(false);
   const [txDigest, setTxDigest] = useState<string | null>(null);
   const [showModal, setShowModal] = useState(false);
+  const [showConnectModal, setShowConnectModal] = useState(false);
 
-  const address = (session?.user as { address?: string })?.address;
+  const walletAccount = useCurrentAccount();
+  const { mutateAsync: signAndExecute } = useSignAndExecuteTransaction();
 
   const handleBuy = async () => {
     if (!session) {
@@ -41,32 +45,54 @@ export function BuyAccessButton({
       return;
     }
 
+    // If no wallet connected, prompt to connect
+    if (!walletAccount) {
+      setShowConnectModal(true);
+      return;
+    }
+
     setLoading(true);
     setShowModal(true);
 
     try {
-      // Step 1: Execute Sui transaction
-      const txResult = await executeBuyAccess({
-        videoId,
-        priceInSui: priceSui,
-        buyerAddress: address || "",
-        creatorAddress,
-      });
+      let digest = "";
 
-      setTxDigest(txResult.txDigest);
+      if (PACKAGE_ID && REGISTRY_OBJECT_ID) {
+        // Use @mysten/sui Transaction — cast to avoid version mismatch type error
+        const { Transaction } = await import("@mysten/sui/transactions");
+        const tx = new Transaction();
+        const priceInMist = BigInt(Math.floor(priceSui * 1_000_000_000));
+        const [coin] = tx.splitCoins(tx.gas, [tx.pure.u64(priceInMist)]);
+        tx.moveCall({
+          target: `${PACKAGE_ID}::cipherview::buy_access`,
+          arguments: [
+            tx.object(REGISTRY_OBJECT_ID),
+            tx.pure.string(videoId),
+            coin,
+            tx.object("0x6"),
+          ],
+        });
 
-      // Step 2: Record purchase in backend
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const result = await signAndExecute({ transaction: tx as any });
+        digest = result.digest;
+      } else {
+        // Dev mode — no contract deployed, simulate
+        await new Promise((r) => setTimeout(r, 1000));
+        digest = "dev-" + Math.random().toString(36).slice(2);
+      }
+
+      setTxDigest(digest);
+
+      // Record purchase in backend
       const res = await fetch(`/api/videos/${videoId}/buy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ txDigest: txResult.txDigest }),
+        body: JSON.stringify({ txDigest: digest }),
       });
 
       const data = await res.json();
-
-      if (!res.ok) {
-        throw new Error(data.error || "Failed to record purchase");
-      }
+      if (!res.ok) throw new Error(data.error || "Failed to record purchase");
 
       toast({
         title: "Access Purchased!",
@@ -77,9 +103,10 @@ export function BuyAccessButton({
       onSuccess?.(data.expiresAt);
     } catch (err) {
       console.error("[buy] Error:", err);
+      const msg = err instanceof Error ? err.message : "Something went wrong";
       toast({
         title: "Purchase Failed",
-        description: err instanceof Error ? err.message : "Something went wrong",
+        description: msg,
         variant: "destructive",
       });
       setShowModal(false);
@@ -90,6 +117,12 @@ export function BuyAccessButton({
 
   return (
     <>
+      <ConnectModal
+        trigger={<span />}
+        open={showConnectModal}
+        onOpenChange={setShowConnectModal}
+      />
+
       <Button
         onClick={handleBuy}
         disabled={loading}
@@ -100,6 +133,11 @@ export function BuyAccessButton({
           <>
             <Loader2 className="w-5 h-5 mr-2 animate-spin" />
             Processing...
+          </>
+        ) : !walletAccount ? (
+          <>
+            <Wallet className="w-5 h-5 mr-2" />
+            Connect Wallet · {formatSui(priceSui)}
           </>
         ) : (
           <>

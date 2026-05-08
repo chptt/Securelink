@@ -7,6 +7,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Shield, Menu, X, Upload, LayoutDashboard, Compass, LogOut, User } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { truncateAddress } from "@/lib/utils";
+import { ConnectButton } from "@mysten/dapp-kit";
 
 export function Navbar() {
   const { data: session } = useSession();
@@ -50,6 +51,12 @@ export function Navbar() {
 
           {/* Auth */}
           <div className="hidden md:flex items-center gap-3">
+            {/* Sui Wallet Connect */}
+            <ConnectButton
+              connectText="Connect Wallet"
+              className="!bg-transparent !border !border-cyan-500/30 !text-cyan-400 !text-xs !px-3 !py-1.5 !rounded-lg hover:!bg-cyan-500/10 !transition-all"
+            />
+
             {session ? (
               <div className="relative">
                 <button
