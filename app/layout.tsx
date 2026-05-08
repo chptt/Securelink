@@ -7,13 +7,13 @@ import { Toaster } from "@/components/ui/toaster";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "CipherView — Encrypted Video Marketplace",
+  title: "SecureLink — Encrypted Video Marketplace",
   description:
     "Buy and sell time-limited access to premium video content, secured by Sui blockchain and AES-256 encryption.",
   keywords: ["video marketplace", "Sui blockchain", "zkLogin", "encrypted content", "Web3"],
   metadataBase: new URL("https://securelink-eta.vercel.app"),
   openGraph: {
-    title: "CipherView",
+    title: "SecureLink",
     description: "Encrypted video access marketplace on Sui",
     type: "website",
   },

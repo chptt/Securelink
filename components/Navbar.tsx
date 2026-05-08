@@ -31,7 +31,7 @@ export function Navbar() {
               <Shield className="w-7 h-7 text-cyan-400 group-hover:text-cyan-300 transition-colors" />
               <div className="absolute inset-0 bg-cyan-400/20 blur-md rounded-full group-hover:bg-cyan-400/30 transition-all" />
             </div>
-            <span className="text-xl font-bold gradient-text">CipherView</span>
+            <span className="text-xl font-bold gradient-text">SecureLink</span>
           </Link>
 
           {/* Desktop Nav */}

@@ -9,7 +9,7 @@ export function Footer() {
           <div className="col-span-1 md:col-span-2">
             <div className="flex items-center gap-2 mb-4">
               <Shield className="w-6 h-6 text-cyan-400" />
-              <span className="text-lg font-bold gradient-text">CipherView</span>
+              <span className="text-lg font-bold gradient-text">SecureLink</span>
             </div>
             <p className="text-sm text-muted-foreground max-w-xs">
               Encrypted video access marketplace powered by Sui blockchain and AES-256-GCM encryption.
@@ -51,7 +51,7 @@ export function Footer() {
 
         <div className="mt-8 pt-8 border-t border-white/5 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="text-xs text-muted-foreground">
-            © 2024 CipherView. Built for demo purposes.
+            © 2025 SecureLink. All rights reserved.
           </p>
           <div className="flex items-center gap-4">
             <a href="https://github.com" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-cyan-400 transition-colors">

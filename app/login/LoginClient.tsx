@@ -71,9 +71,9 @@ export default function LoginClient({ errorParam }: { errorParam: string | null 
             >
               <Shield className="w-10 h-10 text-cyan-400" />
             </motion.div>
-            <h1 className="text-2xl font-bold gradient-text">Welcome to CipherView</h1>
+            <h1 className="text-2xl font-bold gradient-text">Welcome to SecureLink</h1>
             <p className="text-sm text-muted-foreground mt-2">
-              Sign in with Google to access encrypted video content
+              Sign in with Google to access encrypted video content on SecureLink
             </p>
           </div>
           {error && (
