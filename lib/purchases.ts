@@ -3,6 +3,8 @@
  * Uses keyvalues only (no IPFS fetch needed for lookup).
  */
 
+import { PinataSDK } from "pinata";
+
 export interface Purchase {
   videoCid: string;
   buyerAddress: string;
@@ -12,7 +14,6 @@ export interface Purchase {
 }
 
 const PINATA_API = "https://api.pinata.cloud/v3/files/public";
-const PINATA_UPLOAD = "https://uploads.pinata.cloud/v3/files/public";
 
 function getJwt(): string {
   const jwt = process.env.PINATA_JWT;
@@ -20,47 +21,33 @@ function getJwt(): string {
   return jwt;
 }
 
+function getPinata() {
+  return new PinataSDK({ pinataJwt: getJwt(), pinataGateway: "ipfs.io" });
+}
+
 /**
- * Store a purchase record in Pinata.
+ * Store a purchase record in Pinata using the SDK.
  * All data stored in keyvalues for fast lookup — no IPFS fetch needed.
  */
 export async function storePurchase(purchase: Omit<Purchase, "purchasedAt">): Promise<void> {
-  const jwt = getJwt();
+  const pinata = getPinata();
   const purchasedAt = new Date().toISOString();
 
-  const payload = JSON.stringify({
-    videoCid: purchase.videoCid,
-    buyerAddress: purchase.buyerAddress,
-    expiresAt: purchase.expiresAt,
-    txDigest: purchase.txDigest,
-    purchasedAt,
-  });
+  const file = new File(
+    [JSON.stringify({ ...purchase, purchasedAt })],
+    "purchase.json",
+    { type: "application/json" }
+  );
 
-  const blob = new Blob([payload], { type: "application/json" });
-  const file = new File([blob], "purchase.json", { type: "application/json" });
-
-  const form = new FormData();
-  form.append("file", file);
-  form.append("name", `purchase-${purchase.videoCid.slice(0, 8)}-${purchase.buyerAddress.slice(0, 8)}`);
-  // keyvalues must be a JSON string in the multipart field
-  form.append("keyvalues", JSON.stringify({
-    type: "securelink_purchase",
-    video_cid: purchase.videoCid,
-    buyer: purchase.buyerAddress,
-    expires_at: purchase.expiresAt,
-  }));
-
-  const res = await fetch(PINATA_UPLOAD, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${jwt}` },
-    body: form,
-  });
-
-  if (!res.ok) {
-    const text = await res.text();
-    console.error("[purchases] storePurchase failed:", res.status, text);
-    throw new Error(`Failed to store purchase: ${res.status}`);
-  }
+  await pinata.upload.public
+    .file(file)
+    .name(`purchase-${purchase.videoCid.slice(0, 8)}-${purchase.buyerAddress.slice(0, 8)}`)
+    .keyvalues({
+      type: "securelink_purchase",
+      video_cid: purchase.videoCid,
+      buyer: purchase.buyerAddress,
+      expires_at: purchase.expiresAt,
+    });
 }
 
 /**
