@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/auth";
-import { getVideoMetadata } from "@/lib/pinata";
 import { storePurchase } from "@/lib/purchases";
 
 export async function POST(
@@ -15,15 +14,19 @@ export async function POST(
 
     const { id: videoCid } = params;
     const body = await req.json();
-    const { txDigest } = body;
+    const { txDigest, durationHours: clientDuration } = body;
 
-    // Fetch video metadata to get duration
-    let durationHours = 24;
-    try {
-      const meta = await getVideoMetadata(videoCid);
-      durationHours = meta.duration_hours;
-    } catch {
-      // use default duration if IPFS fetch fails
+    // Use duration from client request (passed from video metadata already loaded on page)
+    // Fall back to IPFS fetch only if not provided
+    let durationHours = clientDuration ? parseInt(clientDuration) : 24;
+    if (!clientDuration) {
+      try {
+        const { getVideoMetadata } = await import("@/lib/pinata");
+        const meta = await getVideoMetadata(videoCid);
+        durationHours = meta.duration_hours;
+      } catch {
+        // use default
+      }
     }
 
     const expiresAt = new Date(

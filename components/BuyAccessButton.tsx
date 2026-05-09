@@ -88,7 +88,7 @@ export function BuyAccessButton({
       const res = await fetch(`/api/videos/${videoId}/buy`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ txDigest: digest }),
+        body: JSON.stringify({ txDigest: digest, durationHours }),
       });
 
       const data = await res.json();
