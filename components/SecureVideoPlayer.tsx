@@ -40,12 +40,13 @@ export function SecureVideoPlayer({ embedUrl, expiresAt, onExpire }: SecureVideo
       if (urlObj.hostname.includes("youtube.com") || urlObj.hostname.includes("youtu.be")) {
         // Keep youtube.com — switching to youtube-nocookie.com causes Error 153
         // when video owners restrict third-party embeds
-        urlObj.searchParams.set("rel", "0");           // No related videos at end
-        urlObj.searchParams.set("modestbranding", "1"); // Minimal YouTube branding
-        urlObj.searchParams.set("showinfo", "0");       // Hide title bar
-        urlObj.searchParams.set("iv_load_policy", "3"); // No annotations
-        urlObj.searchParams.set("playsinline", "1");    // Inline on mobile
-        urlObj.searchParams.set("cc_load_policy", "0"); // No captions by default
+        urlObj.searchParams.set("rel", "0");
+        urlObj.searchParams.set("modestbranding", "1");
+        urlObj.searchParams.set("showinfo", "0");
+        urlObj.searchParams.set("iv_load_policy", "3");
+        urlObj.searchParams.set("playsinline", "1");
+        urlObj.searchParams.set("cc_load_policy", "0");
+        urlObj.searchParams.set("widget_referrer", "https://securelink-eta.vercel.app");
       }
 
       return urlObj.toString();
@@ -81,6 +82,18 @@ export function SecureVideoPlayer({ embedUrl, expiresAt, onExpire }: SecureVideo
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
           allowFullScreen
           title="Secure Video Player"
+        />
+        {/* Cover the YouTube link/copy button in bottom-left */}
+        <div
+          className="absolute bottom-0 left-0 w-16 h-12 z-10"
+          style={{ pointerEvents: "all", background: "transparent" }}
+          onClick={(e) => e.preventDefault()}
+        />
+        {/* Cover the YouTube logo in bottom-right */}
+        <div
+          className="absolute bottom-0 right-0 w-28 h-12 z-10"
+          style={{ pointerEvents: "all", background: "transparent" }}
+          onClick={(e) => e.preventDefault()}
         />
       </div>
 
